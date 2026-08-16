@@ -1,5 +1,5 @@
 {
-	"name": "sql_to_adls",
+	"name": "pl_cdc_ingest",
 	"properties": {
 		"activities": [
 			{
@@ -72,7 +72,10 @@
 							"typeProperties": {
 								"source": {
 									"type": "AzureSqlSource",
-									"sqlReaderQuery": "@concat('SELECT ct.order_id, ct.SYS_CHANGE_OPERATION AS _op,\n       ct.SYS_CHANGE_VERSION AS _change_version,\n       o.customer_unique_id, o.order_status, o.order_purchase_timestamp,\n       o.order_approved_at, o.order_delivered_carrier_date,\n       o.order_delivered_customer_date, o.order_estimated_delivery_date,\n       o.updated_at,\n       ', string(activity('GetVersions').output.firstRow.cur_version), ' AS _batch_version,\n       SYSUTCDATETIME() AS _ingest_ts\nFROM CHANGETABLE(CHANGES dbo.orders, ', string(activity('GetVersions').output.firstRow.last_sync), ') AS ct\nLEFT JOIN dbo.orders o ON o.order_id = ct.order_id\nWHERE ct.SYS_CHANGE_VERSION <= ', string(activity('GetVersions').output.firstRow.cur_version))",
+									"sqlReaderQuery": {
+										"value": "@concat('SELECT ct.order_id, ct.SYS_CHANGE_OPERATION AS _op,\n       ct.SYS_CHANGE_VERSION AS _change_version,\n       o.customer_unique_id, o.order_status, o.order_purchase_timestamp,\n       o.order_approved_at, o.order_delivered_carrier_date,\n       o.order_delivered_customer_date, o.order_estimated_delivery_date,\n       o.updated_at,\n       ', string(activity('GetVersions').output.firstRow.cur_version), ' AS _batch_version,\n       SYSUTCDATETIME() AS _ingest_ts\nFROM CHANGETABLE(CHANGES dbo.orders, ', string(activity('GetVersions').output.firstRow.last_sync), ') AS ct\nLEFT JOIN dbo.orders o ON o.order_id = ct.order_id\nWHERE ct.SYS_CHANGE_VERSION <= ', string(activity('GetVersions').output.firstRow.cur_version))",
+										"type": "Expression"
+									},
 									"queryTimeout": "02:00:00",
 									"partitionOption": "None"
 								},
