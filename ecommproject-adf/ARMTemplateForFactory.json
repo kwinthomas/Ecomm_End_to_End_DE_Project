@@ -37,7 +37,196 @@
 	},
 	"resources": [
 		{
-			"name": "[concat(parameters('factoryName'), '/pl_cdc_ingest')]",
+			"name": "[concat(parameters('factoryName'), '/pl_cdc_ingest_customers')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "GetVersions",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": "SELECT\n  (SELECT last_sync_version FROM dbo.cdc_watermark WHERE table_name='customers') AS last_sync,\n  CHANGE_TRACKING_CURRENT_VERSION() AS cur_version,\n  CHANGE_TRACKING_MIN_VALID_VERSION(OBJECT_ID('dbo.customers')) AS min_valid",
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "ds_sql_generic",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						}
+					},
+					{
+						"name": "RetentionOK",
+						"type": "IfCondition",
+						"dependsOn": [
+							{
+								"activity": "GetVersions",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"expression": {
+								"value": "@greaterOrEquals(activity('GetVersions').output.firstRow.last_sync, activity('GetVersions').output.firstRow.min_valid)",
+								"type": "Expression"
+							},
+							"ifFalseActivities": [
+								{
+									"name": "Watermark expired",
+									"type": "Fail",
+									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"message": "Watermark expired — full reload required",
+										"errorCode": "ER01"
+									}
+								}
+							],
+							"ifTrueActivities": [
+								{
+									"name": "CopyOrders",
+									"type": "Copy",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 10,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "AzureSqlSource",
+											"sqlReaderQuery": {
+												"value": "@concat('SELECT ct.customer_unique_id, ct.SYS_CHANGE_OPERATION AS _op, ct.SYS_CHANGE_VERSION AS _change_version, c.customer_zip_prefix, c.customer_city, c.customer_state, c.updated_at FROM CHANGETABLE(CHANGES dbo.customers, ', string(activity('GetVersions').output.firstRow.last_sync), ') AS ct LEFT JOIN dbo.customers c ON c.customer_unique_id = ct.customer_unique_id')",
+												"type": "Expression"
+											},
+											"queryTimeout": "02:00:00",
+											"partitionOption": "None"
+										},
+										"sink": {
+											"type": "ParquetSink",
+											"storeSettings": {
+												"type": "AzureBlobFSWriteSettings"
+											},
+											"formatSettings": {
+												"type": "ParquetWriteSettings"
+											}
+										},
+										"enableStaging": false,
+										"translator": {
+											"type": "TabularTranslator",
+											"typeConversion": true,
+											"typeConversionSettings": {
+												"allowDataTruncation": true,
+												"treatBooleanAsNumber": false
+											}
+										}
+									},
+									"inputs": [
+										{
+											"referenceName": "ds_sql_generic",
+											"type": "DatasetReference",
+											"parameters": {}
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "ds_bronze_parquet",
+											"type": "DatasetReference",
+											"parameters": {
+												"folder": {
+													"value": "@concat('customers/ingest_dt=', formatDateTime(utcnow(),'yyyy-MM-dd'))",
+													"type": "Expression"
+												},
+												"filename": {
+													"value": "@concat('customers_v', string(activity('GetVersions').output.firstRow.cur_version), '.parquet')",
+													"type": "Expression"
+												}
+											}
+										}
+									]
+								},
+								{
+									"name": "UpdateWatermark",
+									"type": "SqlServerStoredProcedure",
+									"dependsOn": [
+										{
+											"activity": "CopyOrders",
+											"dependencyConditions": [
+												"Succeeded"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"storedProcedureName": "[[dbo].[sp_update_watermark]",
+										"storedProcedureParameters": {
+											"new_version": {
+												"value": {
+													"value": "@activity('GetVersions').output.firstRow.cur_version",
+													"type": "Expression"
+												},
+												"type": "Int64"
+											},
+											"rows": {
+												"value": {
+													"value": "@activity('CopyOrders').output.rowsCopied",
+													"type": "Expression"
+												},
+												"type": "Int32"
+											},
+											"table_name": {
+												"value": "customers",
+												"type": "String"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "ls_azuresql",
+										"type": "LinkedServiceReference"
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/ds_sql_generic')]",
+				"[concat(variables('factoryId'), '/datasets/ds_bronze_parquet')]",
+				"[concat(variables('factoryId'), '/linkedServices/ls_azuresql')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_cdc_ingest_orders')]",
 			"type": "Microsoft.DataFactory/factories/pipelines",
 			"apiVersion": "2018-06-01",
 			"properties": {
