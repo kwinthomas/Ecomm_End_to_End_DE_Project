@@ -1,0 +1,7 @@
+pandas
+pyodbc
+sqlalchemy
+python-dotenv
+requests
+pyarrow
+fastparquet
