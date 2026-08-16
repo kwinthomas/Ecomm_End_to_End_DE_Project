@@ -1,5 +1,5 @@
 {
-	"name": "pl_cdc_ingest",
+	"name": "pl_cdc_ingest_orders",
 	"properties": {
 		"activities": [
 			{
