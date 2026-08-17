@@ -52,10 +52,10 @@ I wrote merge logic in Databricks to collapse that into a single current view, h
 | Problem | How I handled it |
 |---|---|
 | One order changed several times | Keep only the most recent version of each order before merging |
-| An order was cancelled and deleted | Deleted rows arrive with no data attached, so they're handled separately — the order is flagged as cancelled rather than blanked out |
+| An order was cancelled and deleted | Deleted rows arrive with no data attached, so they're handled separately, the order is flagged as cancelled rather than blanked out |
 | The pipeline runs twice on the same data | Each order carries a version number, and an update only applies if the incoming version is genuinely newer |
 
-That last point matters most. **Re-running the pipeline on data it has already processed changes nothing at all** — no duplicates, no lost data. I verified this by running the merge twice and confirming the second run wrote zero rows.
+**Re-running the pipeline on data it has already processed changes nothing at all**, no duplicates, no lost data. I verified this by running the merge twice and confirming the second run wrote zero rows.
 
 ### 4. A model built for analysis
 
@@ -65,31 +65,18 @@ That last point matters most. **Re-running the pipeline on data it has already p
 
 ---
 
-## How I know it works
-
-| Check | Result |
-|---|---|
-| Order count matches the source database | Exact match |
-| Running the pipeline twice changes nothing | Zero rows written on the second run |
-| Every order appears exactly once | No duplicates |
-| No customer has two conflicting address records at once | None found |
-| Past states can be reconstructed | Verified via Delta Lake versioning |
-
----
-
 ## What I'd do differently in production
 
-Databricks and Azure both offer managed tools that do this merge automatically. I deliberately wrote it by hand so I'd understand what those tools do underneath — the ordering, the deletes, the re-run safety. In a real production system I'd likely use the managed option and spend the time saved on data quality and monitoring instead.
-
-I'd also add alerting on pipeline failure, and run the source database's reference tables on a different refresh schedule from the fast-changing order tables, since they change far less often.
+Databricks and Azure both offer managed tools that do this merge automatically. But I deliberately created this project so that I would understand what those tools do underneath, the ordering, the deletes, the re-run safety. In a real production system I'd likely use the managed option and spend the time saved on data quality and monitoring instead.
 
 ---
 
-## Repository
+## Repository (Not exhaustive)
 
 ```
-sql/          Database schema, change tracking setup, watermark table
-python/        Reference data load and change replay scripts
-adf/           Data Factory pipeline definitions
-databricks/    Merge logic and star schema models
+Databricks_Analysis/    Merge logic and star schema models
+Incremental_Data_Load/        Reference data load and change replay scripts
+Raw_Data/          Raw data from Kaggle
+SQL/          DDL Script for initial table creation
+adf/           Data Factory pipeline definitions created automatically by ADF
 ```
