@@ -1,6 +1,6 @@
 # Change Data Capture Pipeline for Operational Order Data
 
-I built a data pipeline that keeps a copy of an online store's order database in sync — automatically, and without copying everything each time.
+An online store's orders change constantly, they get placed, approved, shipped, delivered, sometimes cancelled. This project keeps a separate copy of that order database up to date for reporting, by copying only what changed since last time instead of reloading everything.
 
 **Stack:** Azure SQL Database · Azure Data Factory · ADLS Gen2 · Databricks (PySpark, Delta Lake, Unity Catalog)
 
@@ -8,7 +8,7 @@ I built a data pipeline that keeps a copy of an online store's order database in
 
 ## The problem I set out to solve
 
-Most companies have an operational database that runs the business — in this case, one holding e-commerce orders. Analysts can't query it directly, because heavy reporting queries would slow down the system customers are actually using. So the data has to be copied somewhere else.
+Most companies have an operational database that runs the business, in this case, one holding e-commerce orders. Analysts can't query it directly, because heavy reporting queries would slow down the system customers are actually using. So the data has to be copied somewhere else.
 
 The naive approach is to copy the whole database every night. That works until the database is large, at which point it's slow, expensive, and always out of date.
 
@@ -31,17 +31,17 @@ Azure SQL Database  →  Azure Data Factory  →  ADLS Gen2  →  Databricks  �
 
 ### 1. A realistic source database
 
-I used the Olist dataset — around 100,000 real Brazilian e-commerce orders. The problem is that it's a historical export: every order already shows as delivered. Nothing ever changes, so there'd be nothing to capture.
+I used the Olist dataset — around 100,000 real e-commerce orders. The problem is that it's a historical export: every order already shows as delivered. Nothing ever changes, so there'd be nothing to capture.
 
-Each order does carry its real lifecycle timestamps, though — when it was purchased, approved, shipped, and delivered. So I worked backwards and reconstructed the individual changes that must have produced those timestamps, then replayed them against the database on a compressed clock. Orders get created, updated as they move through each stage, and deleted when cancelled — the same way they would in a live system.
+Each order does carry its real lifecycle timestamps, when it was purchased, approved, shipped, and delivered. So I worked backwards and reconstructed the individual changes that must have produced those timestamps, then ran them against the database on a schedule. Orders get created, updated as they move through each stage, and deleted when cancelled, the same way they would in a live system.
+
+Source Dataset - https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce?select=olist_products_dataset.csv
 
 ### 2. A pipeline that finds only what changed
 
-I enabled SQL Server's change tracking, which records which rows have been touched since a given point.
+I enabled SQL Server's change tracking, which records which rows have been changed since a given point (AKA Watermark).
 
-The pipeline keeps a **watermark table** — a small record of how far it got last time. On each run it reads that number, asks the database "what changed since then", writes the results to cloud storage, and updates the watermark.
-
-It also checks whether the watermark has gone stale. Change tracking only remembers changes for a limited period, so if the pipeline hasn't run in too long, some changes will have been purged and the copy would silently be missing data. Rather than continuing and producing a quietly wrong result, the pipeline stops and reports the problem.
+The pipeline keeps a **watermark table**, a small record of how far it got last time. On each run it reads that number, asks the database "what changed since then", writes the results to cloud storage, and updates the watermark.
 
 ### 3. Merge logic that produces one accurate view
 
